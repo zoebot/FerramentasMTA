@@ -1,0 +1,134 @@
+function showVerify(text) {
+  const panel = document.getElementById('verifyPanel');
+  const content = document.getElementById('verifyContent');
+  if (panel && content) {
+    content.textContent = text;
+    panel.classList.add('show');
+  }
+}
+
+/* --- Nova Tabela --- */
+document.getElementById('btnNewTable').addEventListener('click', openNewTableModal);
+document.getElementById('btnSave').addEventListener('click', saveDatabase);
+document.getElementById('newTableCloseBtn').addEventListener('click', closeNewTableModal);
+document.getElementById('newTableCancelBtn').addEventListener('click', closeNewTableModal);
+document.getElementById('newTableCreateBtn').addEventListener('click', createNewTable);
+document.getElementById('addColumnBtn').addEventListener('click', addColumnRow);
+document.getElementById('modalNewTable').addEventListener('click', e => {
+  if (e.target.id === 'modalNewTable') closeNewTableModal();
+});
+
+function openNewTableModal() {
+  document.getElementById('newTableName').value = '';
+  document.getElementById('newTableColumns').innerHTML = '';
+  columnCounter = 0;
+  addColumnRow();
+  addColumnRow();
+  document.getElementById('modalNewTable').classList.add('open');
+}
+function closeNewTableModal() {
+  document.getElementById('modalNewTable').classList.remove('open');
+}
+function addColumnRow() {
+  columnCounter++;
+  const container = document.getElementById('newTableColumns');
+  const div = document.createElement('div');
+  div.className = 'col-row';
+  div.dataset.id = columnCounter;
+  div.innerHTML = `
+    <input type="text" placeholder="nome_coluna" class="col-name" value="">
+    <select class="col-type">
+      <option value="INTEGER">INTEGER</option>
+      <option value="TEXT" selected>TEXT</option>
+      <option value="REAL">REAL</option>
+      <option value="BLOB">BLOB</option>
+      <option value="NUMERIC">NUMERIC</option>
+      <option value="BOOLEAN">BOOLEAN</option>
+      <option value="DATETIME">DATETIME</option>
+    </select>
+    <label><input type="checkbox" class="col-pk"></label>
+    <label><input type="checkbox" class="col-nn"></label>
+    <input type="text" placeholder="NULL" class="col-default" value="">
+    <button class="btn-remove" data-remove="${columnCounter}">🗑️</button>
+  `;
+  container.appendChild(div);
+  div.querySelector('[data-remove]').addEventListener('click', () => div.remove());
+}
+function createNewTable() {
+  if (!db) return;
+  const tableName = document.getElementById('newTableName').value.trim();
+  if (!tableName) { showToast('❌ Digite o nome da tabela', 'error'); return; }
+
+  const exists = db.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name=${escapeValue(tableName)}`);
+  if (exists.length && exists[0].values.length) {
+    showToast('❌ Já existe uma tabela com esse nome', 'error'); return;
+  }
+
+  const rows = document.querySelectorAll('#newTableColumns .col-row');
+  if (rows.length === 0) { showToast('❌ Adicione pelo menos uma coluna', 'error'); return; }
+
+  const columns = []; let hasPk = false;
+  for (const row of rows) {
+    const name = row.querySelector('.col-name').value.trim();
+    const type = row.querySelector('.col-type').value;
+    const pk = row.querySelector('.col-pk').checked;
+    const nn = row.querySelector('.col-nn').checked;
+    const def = row.querySelector('.col-default').value.trim();
+
+    if (!name) { showToast('❌ Todas as colunas precisam de um nome', 'error'); return; }
+    if (columns.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      showToast('❌ Nome de coluna duplicado: ' + name, 'error'); return;
+    }
+
+    let colDef = `${escapeIdentifier(name)} ${type}`;
+    if (pk) { colDef += ' PRIMARY KEY'; hasPk = true; }
+    if (nn) colDef += ' NOT NULL';
+    if (def !== '') {
+      const numDef = Number(def);
+      if (!isNaN(numDef) && def !== '') colDef += ` DEFAULT ${numDef}`;
+      else if (def.toUpperCase() === 'NULL') colDef += ' DEFAULT NULL';
+      else if (def.toUpperCase() === 'TRUE' || def.toUpperCase() === 'FALSE')
+        colDef += ` DEFAULT ${def.toUpperCase() === 'TRUE' ? 1 : 0}`;
+      else colDef += ` DEFAULT ${escapeValue(def)}`;
+    }
+    columns.push({ name, def: colDef });
+  }
+
+  if (!hasPk) columns.unshift({ name: 'id', def: '`id` INTEGER PRIMARY KEY AUTOINCREMENT' });
+
+  const sql = `CREATE TABLE ${escapeIdentifier(tableName)} (${columns.map(c => c.def).join(', ')})`;
+  try {
+    db.run(sql);
+    showToast('✅ Tabela "' + tableName + '" criada!', 'success');
+    showVerify(sql);
+    closeNewTableModal();
+    refreshTableList();
+    selectTable(tableName);
+  } catch (err) {
+    showToast('❌ Erro ao criar tabela: ' + err.message, 'error');
+  }
+}
+
+function escapeIdentifier(id) {
+  return '`' + String(id).replace(/`/g, '``') + '`';
+}
+function escapeValue(val) {
+  if (val === null) return 'NULL';
+  if (typeof val === 'number') return String(val);
+  return "'" + String(val).replace(/'/g, "''") + "'";
+}
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+function showToast(msg, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast ' + type + ' show';
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
