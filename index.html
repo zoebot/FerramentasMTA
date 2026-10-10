@@ -1,3 +1,2241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estúdio Web — Converter · Vídeo · SQLite</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+<style>
+  :root {
+    --bg: #0f1220; --panel: #1a1f35; --panel-2: #232a45; --panel-3: #2b3355;
+    --border: #2e3658; --text: #e7ecff; --muted: #9aa3c7;
+    --accent: #5b8cff; --accent-2: #7c5cff;
+    --ok: #3ecf8e; --err: #ff6b6b; --warn: #ffb454;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 800px at 20% -10%, #1b2246 0%, var(--bg) 55%) fixed;
+    color: var(--text); min-height: 100vh; padding: 20px;
+  }
+  header { max-width: 1180px; margin: 0 auto 14px; }
+  h1 { margin: 0 0 6px; font-size: 1.5rem; letter-spacing: -0.02em; }
+  h1 span { background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+  .tabs { max-width: 1180px; margin: 0 auto 16px; display: flex; gap: 6px;
+    border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .tab-btn { background: transparent; border: 0; color: var(--muted);
+    padding: 10px 18px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    border-bottom: 3px solid transparent; transition: 0.15s; border-radius: 8px 8px 0 0;
+    display: flex; align-items: center; gap: 8px; font-family: inherit; white-space: nowrap; }
+  .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  main { max-width: 1180px; margin: 0 auto; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 820px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+  .panel h3 { margin: 0 0 14px; font-size: 1.02rem; letter-spacing: 0.02em;
+    display: flex; align-items: center; gap: 8px; }
+
+  #dropzone { border: 2px dashed var(--border); border-radius: 12px;
+    padding: 26px 18px; text-align: center; transition: 0.15s ease;
+    cursor: pointer; background: rgba(255,255,255,0.02); }
+  #dropzone:hover, #dropzone.drag { border-color: var(--accent);
+    background: rgba(91,140,255,0.08); }
+  #dropzone strong { color: var(--accent); }
+  #dropzone p { margin: 6px 0 0; color: var(--muted); font-size: 0.85rem; }
+  #fileInput { display: none; }
+
+  .info { margin-top: 14px; font-size: 0.85rem; color: var(--muted);
+    line-height: 1.5; word-break: break-all; }
+  .info b { color: var(--text); }
+
+  .preview-wrap { margin-top: 14px; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border); background-color: #2a2f47;
+    background-image:
+      linear-gradient(45deg, #343a58 25%, transparent 25%),
+      linear-gradient(-45deg, #343a58 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #343a58 75%),
+      linear-gradient(-45deg, transparent 75%, #343a58 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    min-height: 180px; display: flex; align-items: center; justify-content: center; }
+  #preview { max-width: 100%; max-height: 320px; display: block; }
+  #videoEl { display: none; }
+
+  label.field { display: block; font-size: 0.78rem; color: var(--muted);
+    margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }
+  select, input[type=range], input[type=number], input[type=text] {
+    width: 100%; padding: 10px 12px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    font-size: 0.95rem; outline: none; font-family: inherit; }
+  input[type=color] { width: 100%; height: 40px; padding: 2px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; }
+  select:focus, input:focus { border-color: var(--accent); }
+  .row { margin-bottom: 14px; }
+  .row.hidden { display: none; }
+
+  button.primary { width: 100%; padding: 12px 16px; border: 0;
+    border-radius: 10px; font-size: 0.98rem; font-weight: 600;
+    cursor: pointer; color: white;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: 0.15s; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 8px; }
+  button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary:not(:disabled):hover { transform: translateY(-1px); }
+
+  button.secondary { width: 100%; padding: 10px 14px; border: 1px solid var(--border);
+    border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    color: var(--text); background: var(--panel-2); transition: 0.15s; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 6px; }
+  button.secondary:hover { border-color: var(--accent); }
+
+  #status, #vStatus { margin-top: 12px; font-size: 0.88rem; min-height: 20px; }
+  #status.ok, #vStatus.ok { color: var(--ok); }
+  #status.err, #vStatus.err { color: var(--err); }
+  #vStatus.warn { color: var(--warn); }
+
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .time-info { font-size: 0.82rem; color: var(--muted);
+    margin-top: 6px; display: flex; justify-content: space-between; }
+
+  .video-layout { display: grid; grid-template-columns: 1fr 440px;
+    gap: 18px; align-items: start; }
+  @media (max-width: 940px) { .video-layout { grid-template-columns: 1fr; } }
+
+  .clip-actions { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .clip-actions button { flex: 1; min-width: 130px; padding: 10px 12px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    border-radius: 10px; font-weight: 600; cursor: pointer;
+    font-size: 0.88rem; font-family: inherit; transition: 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .clip-actions button:hover { border-color: var(--accent); background: var(--panel-3); }
+  .clip-actions button.accent { background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-color: transparent; color: white; }
+  #videoFileInput, #importVideoInput { display: none; }
+
+  .clips-list { max-height: 560px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px; background: rgba(0,0,0,0.15); }
+  .clips-list .empty { text-align: center; color: var(--muted);
+    font-size: 0.9rem; padding: 30px 10px; margin: 0; }
+  .clip { display: grid; grid-template-columns: 78px 1fr auto; gap: 10px;
+    padding: 8px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 8px; align-items: center;
+    transition: 0.15s; }
+  .clip:hover { border-color: var(--accent); }
+  .clip .clip-thumb { width: 78px; height: 56px; object-fit: contain;
+    background: #000; border-radius: 6px; border: 1px solid var(--border); }
+  .clip .clip-info { min-width: 0; }
+  .clip .clip-name { font-size: 0.82rem; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; }
+  .clip .clip-controls { display: flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
+  .clip .clip-controls input[type=number] {
+    width: 58px; padding: 3px 6px; font-size: 0.78rem; }
+  .clip .clip-controls select {
+    width: auto; padding: 3px 6px; font-size: 0.78rem;
+    background: var(--panel-3); border-radius: 6px; min-width: 120px; }
+  .clip .clip-controls select.effect-sel { min-width: 140px; }
+  .clip-btns { display: flex; flex-direction: column; gap: 4px; }
+  .clip-btns button { width: 28px; height: 24px; padding: 0;
+    background: var(--panel-3); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer; font-size: 0.75rem; line-height: 1;
+    transition: 0.15s; font-family: inherit; }
+  .clip-btns button:hover { border-color: var(--accent); color: var(--accent); }
+  .clip-btns button.del:hover { border-color: var(--err); color: var(--err); }
+
+  .progress-wrap { margin-top: 10px; height: 8px; border-radius: 6px;
+    background: var(--panel-2); overflow: hidden; display: none; }
+  .progress-wrap.visible { display: block; }
+  #progressBar, #importProgressBar { height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.1s linear; }
+
+  .preview-box { margin-top: 12px; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border); background: #000;
+    display: flex; justify-content: center; align-items: center; min-height: 200px; }
+  #vPreview { max-width: 100%; max-height: 260px; display: block; }
+
+  .inline-row { display: flex; gap: 10px; }
+  .inline-row > * { flex: 1; }
+
+  .checkbox-row { display: flex; align-items: center; gap: 8px;
+    font-size: 0.9rem; color: var(--text); background: var(--panel-2);
+    padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; cursor: pointer; }
+  .checkbox-row input { width: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px;
+    background: var(--panel-3); color: var(--muted);
+    border-radius: 6px; font-size: 0.7rem; margin-left: 6px; vertical-align: middle; }
+
+  .fx-section { background: rgba(91,140,255,0.05);
+    border: 1px solid rgba(91,140,255,0.2);
+    border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+  .fx-section h4 { margin: 0 0 10px; font-size: 0.85rem;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--accent); display: flex; align-items: center; gap: 8px; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: none; align-items: center; justify-content: center;
+    z-index: 9999; padding: 20px; }
+  .modal.open { display: flex; }
+  .modal-content { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px; max-width: 660px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6); max-height: 92vh; overflow-y: auto;
+    position: relative; }
+  .modal-content h3 { margin: 0 0 14px; font-size: 1.05rem;
+    display: flex; align-items: center; gap: 8px; }
+  .modal-close { position: absolute; top: 12px; right: 16px;
+    background: transparent; border: 0; color: var(--muted);
+    font-size: 1.4rem; cursor: pointer; }
+  .modal-close:hover { color: var(--text); }
+  .video-preview-box { background: #000; border-radius: 10px;
+    overflow: hidden; display: flex; justify-content: center;
+    align-items: center; min-height: 220px; margin-bottom: 14px;
+    border: 1px solid var(--border); }
+  #importVideoEl { max-width: 100%; max-height: 280px; display: block; }
+
+  .ico { display: inline-flex; width: 1.05em; height: 1.05em;
+    align-items: center; justify-content: center; line-height: 1; }
+
+  /* ===== SQLite ===== */
+  .db-toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+    align-items: center; }
+  .db-toolbar .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 0.9rem;
+    font-weight: 600; font-family: inherit; transition: 0.15s;
+    display: inline-flex; align-items: center; gap: 8px; }
+  .db-toolbar .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .db-toolbar .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .db-toolbar .btn.accent {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-color: transparent; color: white; }
+  .db-toolbar .btn.ok { background: linear-gradient(90deg, var(--ok), #2eb37a);
+    border-color: transparent; color: #06120c; }
+  .db-toolbar .btn.warn { background: var(--panel-2); border-color: var(--warn); color: var(--warn); }
+  .db-toolbar .spacer { flex: 1; }
+
+  .db-layout { display: grid; grid-template-columns: 250px 1fr;
+    gap: 16px; align-items: start; min-height: 520px; }
+  @media (max-width: 820px) { .db-layout { grid-template-columns: 1fr; } }
+
+  .db-sidebar { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px; }
+  .db-sidebar h3 { margin: 0 0 12px; font-size: 0.75rem; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted); font-weight: 600; }
+  .table-item { padding: 10px 14px; border-radius: 8px; cursor: pointer;
+    margin-bottom: 4px; display: flex; align-items: center; gap: 10px;
+    transition: 0.15s; font-size: 0.9rem; color: var(--text); }
+  .table-item:hover { background: var(--panel-2); }
+  .table-item.active { background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    color: white; }
+  .table-item::before { content: "📋"; font-size: 0.85rem; }
+  .table-item.active::before { content: "📂"; }
+
+  .db-main { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; overflow: auto; }
+
+  .db-empty { text-align: center; padding: 70px 20px; color: var(--muted); }
+  .db-empty .icon { font-size: 3.4rem; margin-bottom: 14px; }
+  .db-empty h2 { color: var(--text); margin: 0 0 8px; font-size: 1.15rem; }
+  .db-empty p { font-size: 0.92rem; margin: 0; }
+
+  .db-drop { border: 2px dashed var(--border); border-radius: 14px;
+    padding: 34px 24px; margin-top: 20px; cursor: pointer; transition: 0.15s;
+    max-width: 460px; margin-left: auto; margin-right: auto;
+    background: rgba(255,255,255,0.02); }
+  .db-drop:hover, .db-drop.dragover { border-color: var(--accent);
+    background: rgba(91,140,255,0.08); }
+  .db-drop .icon { font-size: 2.6rem; margin-bottom: 12px; }
+  .db-drop p { margin: 4px 0; }
+  .db-drop strong { color: var(--accent); }
+
+  .db-toolbar-inline { display: flex; gap: 10px; margin-bottom: 14px;
+    flex-wrap: wrap; align-items: center; }
+  .search-box { background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--text); padding: 9px 14px; border-radius: 10px;
+    font-size: 0.9rem; outline: none; width: 230px; font-family: inherit; }
+  .search-box:focus { border-color: var(--accent); }
+  .db-toolbar-inline .info { margin-left: auto; color: var(--muted);
+    font-size: 0.85rem; margin-top: 0; }
+
+  .schema-info { background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;
+    font-size: 0.85rem; color: var(--muted); line-height: 1.7; }
+  .schema-info span { color: var(--text); margin-right: 16px; }
+  .schema-info strong { color: var(--muted); font-weight: 600;
+    text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.06em; }
+
+  .verify-panel { background: rgba(62,207,142,0.07);
+    border: 1px solid rgba(62,207,142,0.35); border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 14px; display: none; }
+  .verify-panel.show { display: block; }
+  .verify-panel h4 { color: var(--ok); margin: 0 0 8px; font-size: 0.88rem; }
+  .verify-panel pre { background: rgba(0,0,0,0.35); padding: 10px;
+    border-radius: 8px; font-size: 0.78rem; overflow-x: auto;
+    color: var(--muted); max-height: 150px; margin: 0;
+    font-family: ui-monospace, Consolas, monospace; }
+
+  .table-wrapper { background: var(--panel-2); border-radius: 12px;
+    border: 1px solid var(--border); overflow: auto; max-height: 62vh; }
+  .table-wrapper table { width: 100%; border-collapse: collapse;
+    font-size: 0.88rem; }
+  .table-wrapper th { background: var(--panel-3); padding: 12px 14px;
+    text-align: left; font-weight: 600; color: var(--muted);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+    position: sticky; top: 0; z-index: 10; }
+  .table-wrapper td { padding: 10px 14px;
+    border-bottom: 1px solid var(--border); max-width: 320px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .table-wrapper tr:hover td { background: rgba(255,255,255,0.03); }
+  .table-wrapper td.editable { cursor: text; }
+  .table-wrapper td.editable:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+  .table-wrapper td.editing { padding: 0 !important; }
+  .table-wrapper td.editing input { width: 100%; padding: 10px 14px;
+    border: none; background: var(--accent); color: white;
+    font-size: 0.88rem; outline: none; font-family: inherit; border-radius: 0; }
+  .table-wrapper td.null-value { color: var(--muted); font-style: italic; }
+
+  .row-actions { display: flex; gap: 6px; opacity: 0; transition: 0.15s; }
+  .table-wrapper tr:hover .row-actions { opacity: 1; }
+  .row-actions button { background: transparent; border: 1px solid var(--border);
+    color: var(--muted); padding: 4px 10px; border-radius: 6px;
+    cursor: pointer; font-size: 0.75rem; font-family: inherit; transition: 0.15s; }
+  .row-actions button:hover { background: var(--err); border-color: var(--err); color: white; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px;
+    background: var(--panel-3); color: var(--text); padding: 14px 20px;
+    border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    transform: translateY(100px); opacity: 0; transition: 0.3s;
+    z-index: 10000; display: flex; align-items: center; gap: 10px;
+    font-size: 0.9rem; max-width: 420px; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-left: 4px solid var(--ok); }
+  .toast.error { border-left: 4px solid var(--err); }
+
+  .col-header { display: grid;
+    grid-template-columns: 2fr 1.2fr 0.6fr 0.6fr 1fr 0.5fr;
+    gap: 8px; padding: 0 10px 6px 10px; font-size: 0.7rem;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .col-row { display: grid;
+    grid-template-columns: 2fr 1.2fr 0.6fr 0.6fr 1fr 0.5fr;
+    gap: 8px; align-items: center; margin-bottom: 8px; padding: 10px;
+    background: var(--panel-2); border-radius: 8px;
+    border: 1px solid var(--border); }
+  .col-row input, .col-row select { background: var(--panel-3);
+    border: 1px solid var(--border); color: var(--text);
+    padding: 8px 10px; border-radius: 6px; font-size: 0.85rem;
+    outline: none; width: 100%; font-family: inherit; }
+  .col-row input:focus, .col-row select:focus { border-color: var(--accent); }
+  .col-row label { font-size: 0.75rem; color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; cursor: pointer; }
+  .col-row label input[type="checkbox"] { width: auto; cursor: pointer; }
+  .col-row .btn-remove { background: rgba(255,107,107,0.15);
+    border: 1px solid var(--err); color: var(--err);
+    padding: 6px 10px; border-radius: 6px; cursor: pointer;
+    font-size: 0.8rem; font-family: inherit; transition: 0.15s; }
+  .col-row .btn-remove:hover { background: var(--err); color: white; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--panel-3); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Estúdio Web <span>Converter · Vídeo · SQLite</span></h1>
+  <p>100% offline. Converte imagens/DDS, monta vídeos WebM com efeitos, e edita bancos SQLite.</p>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="convert"><span class="ico">🖼</span> Converter</button>
+  <button class="tab-btn" data-tab="video"><span class="ico">🎬</span> Criar / Editar Vídeo</button>
+  <button class="tab-btn" data-tab="sqlite"><span class="ico">🗃</span> SQLite Editor</button>
+</nav>
+
+<main>
+  <section id="tab-convert" class="tab-content active">
+    <div class="grid-2">
+      <section class="panel">
+        <div id="dropzone">
+          <strong>Clique ou arraste um arquivo aqui</strong>
+          <p>.dds, .png, .jpg, .jpeg, .webp, .bmp, .gif, .webm, .mp4, .ogv</p>
+          <input type="file" id="fileInput" accept="image/*,.dds,video/webm,video/mp4,video/ogg,.webm,.mp4,.ogv">
+        </div>
+        <div class="info" id="fileInfo"></div>
+        <div class="preview-wrap">
+          <canvas id="preview"></canvas>
+          <video id="videoEl" muted playsinline></video>
+        </div>
+        <div class="hint" id="ddsInfo"></div>
+      </section>
+
+      <section class="panel">
+        <div class="row hidden" id="frameRow">
+          <label class="field" for="frameTime">Frame do vídeo (segundos): <span id="frameVal">0.00</span></label>
+          <input type="range" id="frameTime" min="0" max="0" step="0.01" value="0">
+          <div class="time-info">
+            <span>0.00 s</span>
+            <span id="frameDur">0.00 s</span>
+          </div>
+        </div>
+        <div class="row">
+          <label class="field" for="format">Formato de saída</label>
+          <select id="format">
+            <option value="png">🖼 PNG (lossless, com alfa)</option>
+            <option value="jpeg">📷 JPEG (lossy)</option>
+            <option value="webp">🌐 WebP</option>
+            <option value="dds-rgba">🎮 DDS — sem compressão (RGBA)</option>
+            <option value="dds-dxt1">🎮 DDS — DXT1 (sem alfa, menor)</option>
+            <option value="dds-dxt5">🎮 DDS — DXT5 (com alfa)</option>
+          </select>
+        </div>
+        <div class="row" id="qualityRow">
+          <label class="field" for="quality">Qualidade: <span id="qualityVal">90</span></label>
+          <input type="range" id="quality" min="1" max="100" value="90">
+        </div>
+        <button class="primary" id="convertBtn" disabled><span class="ico">⬇</span> Converter e baixar</button>
+        <div id="status"></div>
+        <div id="downloadArea" style="margin-top:14px"></div>
+        <div class="hint">
+          • DDS com <b>DX10 / BC7</b> não é suportado neste conversor simples.
+          <br>• Ao salvar DDS, o resultado é legível pelo Photoshop (plugin NVIDIA), GIMP e engines.
+          <br>• Vídeos <b>.webm/.mp4/.ogv</b>: escolha o frame no slider antes de converter.
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section id="tab-video" class="tab-content">
+    <div class="video-layout">
+      <section class="panel">
+        <h3><span class="ico">🎞</span> Clipes <span class="badge" id="clipsCount">0</span></h3>
+        <div class="clip-actions">
+          <button id="addImgsBtn"><span class="ico">🖼</span> Adicionar imagens</button>
+          <button id="importVideoBtn" class="accent"><span class="ico">🎬</span> Importar vídeo</button>
+          <button id="addFrameBtn" title="Adiciona a imagem carregada na aba Converter"><span class="ico">📸</span> Frame atual</button>
+          <input type="file" id="videoFileInput" multiple accept="image/*,.dds">
+          <input type="file" id="importVideoInput" accept="video/webm,video/mp4,video/ogg,.webm,.mp4,.ogv">
+        </div>
+        <div id="clipsList" class="clips-list">
+          <p class="empty">Nenhum clipe. Adicione imagens ou importe um vídeo.</p>
+        </div>
+        <div class="hint" style="margin-top:10px">
+          Cada clipe tem duração, <b>efeito próprio</b> e ordem ajustáveis. Use ↑ ↓ para reordenar e ✕ para remover.
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3><span class="ico">⚙️</span> Configurações e Exportação</h3>
+
+        <div class="fx-section">
+          <h4><span class="ico">✨</span> Transição entre clipes</h4>
+          <div class="row inline-row" style="margin-bottom:0">
+            <div style="flex:2">
+              <label class="field" for="vTransition">Tipo</label>
+              <select id="vTransition">
+                <option value="none">⭕ Nenhuma</option>
+                <option value="fade" selected>🌫️ Fade (dissolver)</option>
+                <option value="slide-left">⬅️ Deslizar ←</option>
+                <option value="slide-right">➡️ Deslizar →</option>
+                <option value="slide-up">⬆️ Deslizar ↑</option>
+                <option value="slide-down">⬇️ Deslizar ↓</option>
+                <option value="zoom-in">🔍 Zoom in</option>
+                <option value="zoom-out">🔎 Zoom out</option>
+                <option value="wipe-left">◀️ Wipe ←</option>
+                <option value="wipe-right">▶️ Wipe →</option>
+                <option value="wipe-up">🔼 Wipe ↑</option>
+                <option value="wipe-down">🔽 Wipe ↓</option>
+                <option value="circle">⚪ Círculo</option>
+              </select>
+            </div>
+            <div style="flex:1">
+              <label class="field" for="vTransitionDur">Duração (s)</label>
+              <input type="number" id="vTransitionDur" value="0.6" min="0.1" max="3" step="0.1">
+            </div>
+          </div>
+        </div>
+
+        <div class="fx-section">
+          <h4><span class="ico">🎨</span> Efeito padrão (aplicado a novos clipes)</h4>
+          <select id="vDefaultEffect">
+            <option value="none">⚪ Nenhum</option>
+            <option value="zoom-in">🔍 Zoom in (aproximar)</option>
+            <option value="zoom-out">🔎 Zoom out (afastar)</option>
+            <option value="pan-left">⬅️ Pan ← (mover p/ esquerda)</option>
+            <option value="pan-right">➡️ Pan → (mover p/ direita)</option>
+            <option value="pan-up">⬆️ Pan ↑</option>
+            <option value="pan-down">⬇️ Pan ↓</option>
+            <option value="shake">📳 Shake (tremer)</option>
+            <option value="pulse">💓 Pulse (pulsar)</option>
+            <option value="rotate">🔄 Rotação suave</option>
+            <option value="blur-in">💨 Blur in</option>
+            <option value="blur-out">🌫️ Blur out</option>
+          </select>
+        </div>
+
+        <div class="row inline-row">
+          <div>
+            <label class="field" for="vFps">🎞 FPS</label>
+            <select id="vFps">
+              <option value="15">15</option>
+              <option value="24">24</option>
+              <option value="30" selected>30</option>
+              <option value="60">60</option>
+            </select>
+          </div>
+          <div>
+            <label class="field" for="vRes">🖥 Resolução</label>
+            <select id="vRes">
+              <option value="640x360">640×360</option>
+              <option value="1280x720" selected>1280×720</option>
+              <option value="1920x1080">1920×1080</option>
+              <option value="auto">Auto (1º clipe)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row inline-row">
+          <div>
+            <label class="field" for="vBg">🎨 Fundo</label>
+            <input type="color" id="vBg" value="#000000">
+          </div>
+          <div>
+            <label class="field" for="vBitrate">📊 Bitrate</label>
+            <select id="vBitrate">
+              <option value="1000000">Baixa (1 Mbps)</option>
+              <option value="4000000" selected>Média (4 Mbps)</option>
+              <option value="8000000">Alta (8 Mbps)</option>
+              <option value="16000000">Muito alta (16 Mbps)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <label class="checkbox-row">
+            <input type="checkbox" id="vFade">
+            <span class="ico">🌫️</span> Fade (escurecer) início e fim de cada clipe
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="checkbox-row">
+            <input type="checkbox" id="vFit" checked>
+            <span class="ico">📐</span> Ajustar imagem ao quadro (senão corta)
+          </label>
+        </div>
+
+        <div class="row inline-row">
+          <button class="secondary" id="previewBtn"><span class="ico">▶</span> Pré-visualizar</button>
+          <button class="secondary" id="exportBtn"><span class="ico">⬇</span> Exportar .webm</button>
+        </div>
+
+        <div class="progress-wrap" id="progressWrap"><div id="progressBar"></div></div>
+        <div id="vStatus"></div>
+        <div id="vDownloadArea" style="margin-top:10px"></div>
+
+        <div class="preview-box" style="margin-top:14px">
+          <canvas id="vPreview" width="640" height="360"></canvas>
+        </div>
+
+        <div class="hint">
+          • WebM (VP8/VP9) — suportado por Chrome, Firefox, Edge e players comuns.
+          <br>• Sem áudio nesta versão.
+          <br>• Duração total: <b id="totalDur">0.00 s</b>.
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section id="tab-sqlite" class="tab-content">
+    <div class="db-toolbar">
+      <button class="btn accent" id="btnOpen">📂 Abrir main.db</button>
+      <button class="btn warn" id="btnNewTable" disabled>➕ Nova Tabela</button>
+      <button class="btn ok" id="btnSave" disabled>💾 Salvar / Download</button>
+      <span class="spacer"></span>
+      <input type="file" id="dbFileInput" style="display:none"
+             accept=".db,.sqlite,.sqlite3,.sqlitedb">
+    </div>
+
+    <div class="db-layout">
+      <aside class="db-sidebar">
+        <h3>Tabelas</h3>
+        <div id="tableList">
+          <p style="color:var(--muted);font-size:0.85rem;padding:10px 0;margin:0;">
+            Nenhum banco carregado
+          </p>
+        </div>
+      </aside>
+
+      <div class="db-main" id="dbMain">
+        <div class="db-empty">
+          <div class="icon">🗃️</div>
+          <h2>Editor de SQLite</h2>
+          <p>Abra seu arquivo <strong>main.db</strong> para começar a editar</p>
+          <div class="db-drop" id="dbDropZone">
+            <div class="icon">📥</div>
+            <p><strong>Clique aqui</strong> ou arraste o arquivo main.db</p>
+            <p style="font-size:0.8rem;margin-top:8px;color:var(--muted);">
+              Suporta .db, .sqlite, .sqlite3
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="importModal">
+  <div class="modal-content">
+    <button class="modal-close" id="importCloseBtn" title="Fechar">✕</button>
+    <h3><span class="ico">🎬</span> Importar vídeo — extrair frames</h3>
+
+    <div class="video-preview-box">
+      <video id="importVideoEl" controls playsinline preload="metadata"></video>
+    </div>
+
+    <div class="row inline-row">
+      <div>
+        <label class="field" for="importStart">Início (s)</label>
+        <input type="number" id="importStart" value="0" min="0" step="0.1">
+      </div>
+      <div>
+        <label class="field" for="importEnd">Fim (s)</label>
+        <input type="number" id="importEnd" value="0" min="0" step="0.1">
+      </div>
+      <div>
+        <label class="field" for="importFps">Extração</label>
+        <select id="importFps">
+          <option value="1">1 FPS</option>
+          <option value="2" selected>2 FPS</option>
+          <option value="4">4 FPS</option>
+          <option value="8">8 FPS</option>
+          <option value="12">12 FPS</option>
+          <option value="24">24 FPS</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="hint" id="importInfo">Carregando vídeo…</div>
+
+    <div class="progress-wrap" id="importProgressWrap"><div id="importProgressBar"></div></div>
+
+    <div class="row inline-row" style="margin-top:14px; margin-bottom:0">
+      <button class="secondary" id="importCancelBtn">Cancelar</button>
+      <button class="primary" id="importConfirmBtn" disabled>✨ Adicionar como clipes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modalNewTable">
+  <div class="modal-content" style="max-width:720px;">
+    <button class="modal-close" id="newTableCloseBtn" title="Fechar">✕</button>
+    <h3><span class="ico">➕</span> Criar Nova Tabela</h3>
+
+    <div class="row">
+      <label class="field" for="newTableName">Nome da Tabela</label>
+      <input type="text" id="newTableName" placeholder="Ex: jogadores, veiculos, itens...">
+    </div>
+
+    <div style="margin:14px 0 10px;">
+      <label class="field" style="margin:0;">Colunas</label>
+    </div>
+    <div class="col-header">
+      <span>Nome</span>
+      <span>Tipo</span>
+      <span>PK</span>
+      <span>NN</span>
+      <span>Default</span>
+      <span></span>
+    </div>
+    <div id="newTableColumns"></div>
+
+    <button class="secondary" id="addColumnBtn" style="margin-top:10px;">
+      ➕ Adicionar Coluna
+    </button>
+
+    <div class="row inline-row" style="margin-top:18px; margin-bottom:0;">
+      <button class="secondary" id="newTableCancelBtn">Cancelar</button>
+      <button class="primary" id="newTableCreateBtn">Criar Tabela</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== TABS ===== */
+(() => {
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b =>
+        b.classList.toggle("active", b === btn));
+      document.querySelectorAll(".tab-content").forEach(sec =>
+        sec.classList.toggle("active", sec.id === "tab-" + btn.dataset.tab));
+    });
+  });
+})();
+
+/* ===== UTILS ===== */
+function readFileAsArrayBuffer(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsArrayBuffer(file);
+  });
+}
+function isDDS(buf) {
+  if (buf.byteLength < 4) return false;
+  return new DataView(buf).getUint32(0, true) === 0x20534444;
+}
+function loadImageFromURL(url) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("Não foi possível ler a imagem."));
+    im.src = url;
+  });
+}
+function seekVideoTo(video, time) {
+  return new Promise((res, rej) => {
+    const onSeeked = () => { video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onErr); res(); };
+    const onErr = () => { video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onErr); rej(new Error("Falha ao buscar frame.")); };
+    video.addEventListener("seeked", onSeeked, { once: true });
+    video.addEventListener("error", onErr, { once: true });
+    if (Math.abs(video.currentTime - time) < 0.001) {
+      video.currentTime = Math.min(time + 0.001, (video.duration || 1) - 0.001);
+    } else video.currentTime = time;
+  });
+}
+
+/* ===== DDS ===== */
+function decodeDXTColors(c0, c1, forceFour) {
+  const r0 = ((c0 >> 11) & 0x1f) * 255 / 31;
+  const g0 = ((c0 >> 5) & 0x3f) * 255 / 63;
+  const b0 = (c0 & 0x1f) * 255 / 31;
+  const r1 = ((c1 >> 11) & 0x1f) * 255 / 31;
+  const g1 = ((c1 >> 5) & 0x3f) * 255 / 63;
+  const b1 = (c1 & 0x1f) * 255 / 31;
+  const colors = [[r0,g0,b0,255],[r1,g1,b1,255]];
+  if (c0 > c1 || forceFour) {
+    colors.push([(2*r0+r1)/3,(2*g0+g1)/3,(2*b0+b1)/3,255]);
+    colors.push([(r0+2*r1)/3,(g0+2*g1)/3,(b0+2*b1)/3,255]);
+  } else {
+    colors.push([(r0+r1)/2,(g0+g1)/2,(b0+b1)/2,255]);
+    colors.push([0,0,0,0]);
+  }
+  return colors;
+}
+function decodeDXT1(data, o, w, h, out) {
+  const bx = Math.max(1, Math.ceil(w/4)), by = Math.max(1, Math.ceil(h/4));
+  let p = o;
+  for (let Y = 0; Y < by; Y++) for (let X = 0; X < bx; X++) {
+    const c0 = data[p]|(data[p+1]<<8), c1 = data[p+2]|(data[p+3]<<8);
+    const bits = data[p+4]|(data[p+5]<<8)|(data[p+6]<<16)|(data[p+7]<<24);
+    const colors = decodeDXTColors(c0, c1, false);
+    for (let py = 0; py < 4; py++) for (let px = 0; px < 4; px++) {
+      const x = X*4+px, y = Y*4+py;
+      if (x >= w || y >= h) continue;
+      const idx = (bits >>> (2*(py*4+px))) & 3, c = colors[idx];
+      const q = (y*w+x)*4;
+      out[q]=c[0]; out[q+1]=c[1]; out[q+2]=c[2]; out[q+3]=c[3];
+    }
+    p += 8;
+  }
+}
+function decodeDXT3(data, o, w, h, out) {
+  const bx = Math.max(1, Math.ceil(w/4)), by = Math.max(1, Math.ceil(h/4));
+  let p = o;
+  for (let Y = 0; Y < by; Y++) for (let X = 0; X < bx; X++) {
+    const aB = []; for (let i = 0; i < 8; i++) aB.push(data[p+i]);
+    const c0 = data[p+8]|(data[p+9]<<8), c1 = data[p+10]|(data[p+11]<<8);
+    const bits = data[p+12]|(data[p+13]<<8)|(data[p+14]<<16)|(data[p+15]<<24);
+    const colors = decodeDXTColors(c0, c1, true);
+    for (let py = 0; py < 4; py++) for (let px = 0; px < 4; px++) {
+      const x = X*4+px, y = Y*4+py;
+      if (x >= w || y >= h) continue;
+      const idx = (bits >>> (2*(py*4+px))) & 3, c = colors[idx];
+      const pi = py*4+px, bi = Math.floor(pi/2);
+      const n = pi % 2 === 0 ? (aB[bi] & 0x0f) : (aB[bi] >> 4);
+      const q = (y*w+x)*4;
+      out[q]=c[0]; out[q+1]=c[1]; out[q+2]=c[2]; out[q+3]=n*17;
+    }
+    p += 16;
+  }
+}
+function decodeDXT5(data, o, w, h, out) {
+  const bx = Math.max(1, Math.ceil(w/4)), by = Math.max(1, Math.ceil(h/4));
+  let p = o;
+  for (let Y = 0; Y < by; Y++) for (let X = 0; X < bx; X++) {
+    const a0 = data[p], a1 = data[p+1];
+    const alphas = [a0, a1];
+    if (a0 > a1) { for (let i = 1; i <= 6; i++) alphas.push(Math.round(((7-i)*a0+i*a1)/7)); }
+    else { for (let i = 1; i <= 4; i++) alphas.push(Math.round(((5-i)*a0+i*a1)/5));
+      alphas.push(0); alphas.push(255); }
+    const low = data[p+2]|(data[p+3]<<8)|(data[p+4]<<16);
+    const high = data[p+5]|(data[p+6]<<8)|(data[p+7]<<16);
+    const ai = new Array(16);
+    for (let i = 0; i < 8; i++) { ai[i] = (low >>> (3*i)) & 7; ai[i+8] = (high >>> (3*i)) & 7; }
+    const c0 = data[p+8]|(data[p+9]<<8), c1 = data[p+10]|(data[p+11]<<8);
+    const bits = data[p+12]|(data[p+13]<<8)|(data[p+14]<<16)|(data[p+15]<<24);
+    const colors = decodeDXTColors(c0, c1, true);
+    for (let py = 0; py < 4; py++) for (let px = 0; px < 4; px++) {
+      const x = X*4+px, y = Y*4+py;
+      if (x >= w || y >= h) continue;
+      const idx = (bits >>> (2*(py*4+px))) & 3, c = colors[idx];
+      const a = alphas[ai[py*4+px]];
+      const q = (y*w+x)*4;
+      out[q]=c[0]; out[q+1]=c[1]; out[q+2]=c[2]; out[q+3]=a;
+    }
+    p += 16;
+  }
+}
+function parseDDS(buffer) {
+  const dv = new DataView(buffer);
+  const u32 = o => dv.getUint32(o, true);
+  if (u32(0) !== 0x20534444) throw new Error("DDS inválido.");
+  const ho = 4;
+  const height = u32(ho+8), width = u32(ho+12);
+  const pf = u32(ho+76), ccU = u32(ho+80);
+  const bpp = u32(ho+84);
+  const rM = u32(ho+88), gM = u32(ho+92), bM = u32(ho+96), aM = u32(ho+100);
+  const data = new Uint8Array(buffer, ho+124);
+  const out = new Uint8ClampedArray(width*height*4);
+  let kind = "";
+  if (pf & 0x4) {
+    const cc = String.fromCharCode(ccU & 0xff, (ccU>>8)&0xff, (ccU>>16)&0xff, (ccU>>24)&0xff);
+    if (cc === "DXT1") { kind = "DXT1"; decodeDXT1(data, 0, width, height, out); }
+    else if (cc === "DXT3") { kind = "DXT3"; decodeDXT3(data, 0, width, height, out); }
+    else if (cc === "DXT5") { kind = "DXT5"; decodeDXT5(data, 0, width, height, out); }
+    else if (cc === "DX10") throw new Error("DDS DX10/BC7 não suportado.");
+    else throw new Error("FourCC: " + cc);
+  } else if (pf & 0x40) {
+    kind = "Sem compressão";
+    if (bpp === 32) {
+      const hasA = (pf & 0x1) !== 0;
+      for (let i = 0, o = 0; i < width*height; i++, o += 4) {
+        const v = data[o]|(data[o+1]<<8)|(data[o+2]<<16)|(data[o+3]<<24);
+        out[i*4] = (v&rM) ? ((v&rM) >>> (Math.log2(rM & -rM))) : 0;
+        out[i*4+1] = (v&gM) ? ((v&gM) >>> (Math.log2(gM & -gM))) : 0;
+        out[i*4+2] = (v&bM) ? ((v&bM) >>> (Math.log2(bM & -bM))) : 0;
+        out[i*4+3] = (hasA && aM) ? ((v&aM) >>> (Math.log2(aM & -aM))) : 255;
+      }
+    } else if (bpp === 24) {
+      for (let i = 0, o = 0; i < width*height; i++, o += 3) {
+        out[i*4] = data[o+2]; out[i*4+1] = data[o+1]; out[i*4+2] = data[o]; out[i*4+3] = 255;
+      }
+    } else throw new Error("BPP: " + bpp);
+  } else throw new Error("Formato DDS não reconhecido.");
+  return { width, height, imageData: new ImageData(out, width, height), kind };
+}
+function buildDDSHeader(w, h, opts) {
+  const buf = new ArrayBuffer(128);
+  const dv = new DataView(buf);
+  let o = 0;
+  const W = v => { dv.setUint32(o, v, true); o += 4; };
+  W(0x20534444); W(124); W(0x1|0x2|0x4|0x1000|0x8); W(h); W(w);
+  if (opts.cc === "DXT1") W(Math.max(1,Math.ceil(w/4))*Math.max(1,Math.ceil(h/4))*8);
+  else if (opts.cc === "DXT5") W(Math.max(1,Math.ceil(w/4))*Math.max(1,Math.ceil(h/4))*16);
+  else W(w*4);
+  W(0); W(1);
+  for (let i = 0; i < 11; i++) W(0);
+  W(32);
+  if (opts.cc) {
+    W(0x4);
+    const c = opts.cc;
+    dv.setUint32(o, c.charCodeAt(0)|(c.charCodeAt(1)<<8)|(c.charCodeAt(2)<<16)|(c.charCodeAt(3)<<24), true);
+    o += 4;
+    W(0);W(0);W(0);W(0);W(0);
+  } else {
+    W(0x41); W(0); W(32);
+    W(0x00ff0000); W(0x0000ff00); W(0x000000ff); W(0xff000000);
+  }
+  W(0x1000); W(0);W(0);W(0);W(0);
+  return new Uint8Array(buf);
+}
+const rgbTo565 = (r,g,b) => ((r>>3)<<11)|((g>>2)<<5)|(b>>3);
+function blockPixels(id, w, h, bx, by) {
+  const px = [];
+  for (let py = 0; py < 4; py++) for (let pxi = 0; pxi < 4; pxi++) {
+    const x = Math.min(bx*4+pxi, w-1), y = Math.min(by*4+py, h-1);
+    const i = (y*w+x)*4;
+    px.push([id[i], id[i+1], id[i+2], id[i+3]]);
+  }
+  return px;
+}
+function encodeDXT1(id, w, h) {
+  const bX = Math.max(1,Math.ceil(w/4)), bY = Math.max(1,Math.ceil(h/4));
+  const out = new Uint8Array(bX*bY*8);
+  let o = 0;
+  for (let by = 0; by < bY; by++) for (let bx = 0; bx < bX; bx++) {
+    const px = blockPixels(id, w, h, bx, by);
+    let mnL = Infinity, mxL = -Infinity, mnP = px[0], mxP = px[0];
+    for (const p of px) {
+      const l = 0.299*p[0]+0.587*p[1]+0.114*p[2];
+      if (l < mnL) { mnL = l; mnP = p; }
+      if (l > mxL) { mxL = l; mxP = p; }
+    }
+    const c0 = rgbTo565(mxP[0],mxP[1],mxP[2]), c1 = rgbTo565(mnP[0],mnP[1],mnP[2]);
+    out[o++] = c0 & 0xff; out[o++] = (c0>>8)&0xff;
+    out[o++] = c1 & 0xff; out[o++] = (c1>>8)&0xff;
+    const colors = decodeDXTColors(c0, c1, false);
+    let bits = 0;
+    for (let i = 0; i < 16; i++) {
+      const p = px[i]; let best = 0, bd = Infinity;
+      for (let j = 0; j < 4; j++) {
+        const c = colors[j];
+        const d = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
+        if (d < bd) { bd = d; best = j; }
+      }
+      bits |= best << (2*i);
+    }
+    out[o++] = bits & 0xff; out[o++] = (bits>>8)&0xff;
+    out[o++] = (bits>>16)&0xff; out[o++] = (bits>>24)&0xff;
+  }
+  return out;
+}
+function encodeDXT5(id, w, h) {
+  const bX = Math.max(1,Math.ceil(w/4)), bY = Math.max(1,Math.ceil(h/4));
+  const out = new Uint8Array(bX*bY*16);
+  let o = 0;
+  for (let by = 0; by < bY; by++) for (let bx = 0; bx < bX; bx++) {
+    const px = blockPixels(id, w, h, bx, by);
+    let mnA = 255, mxA = 0;
+    for (const p of px) { if (p[3] < mnA) mnA = p[3]; if (p[3] > mxA) mxA = p[3]; }
+    out[o++] = mxA; out[o++] = mnA;
+    const alphas = [mxA, mnA];
+    if (mxA > mnA) { for (let i = 1; i <= 6; i++) alphas.push(Math.round(((7-i)*mxA+i*mnA)/7)); }
+    else { for (let i = 1; i <= 4; i++) alphas.push(Math.round(((5-i)*mxA+i*mnA)/5));
+      alphas.push(0); alphas.push(255); }
+    const ai = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) {
+      const a = px[i][3]; let best = 0, bd = Infinity;
+      for (let j = 0; j < 8; j++) {
+        const d = Math.abs(a - alphas[j]);
+        if (d < bd) { bd = d; best = j; }
+      }
+      ai[i] = best;
+    }
+    let lo = 0, hi = 0;
+    for (let i = 0; i < 8; i++) { lo |= ai[i]<<(3*i); hi |= ai[i+8]<<(3*i); }
+    out[o++] = lo & 0xff; out[o++] = (lo>>8)&0xff; out[o++] = (lo>>16)&0xff;
+    out[o++] = hi & 0xff; out[o++] = (hi>>8)&0xff; out[o++] = (hi>>16)&0xff;
+    let mnL = Infinity, mxL = -Infinity, mnP = px[0], mxP = px[0];
+    for (const p of px) {
+      const l = 0.299*p[0]+0.587*p[1]+0.114*p[2];
+      if (l < mnL) { mnL = l; mnP = p; }
+      if (l > mxL) { mxL = l; mxP = p; }
+    }
+    const c0 = rgbTo565(mxP[0],mxP[1],mxP[2]), c1 = rgbTo565(mnP[0],mnP[1],mnP[2]);
+    out[o++] = c0 & 0xff; out[o++] = (c0>>8)&0xff;
+    out[o++] = c1 & 0xff; out[o++] = (c1>>8)&0xff;
+    const colors = decodeDXTColors(c0, c1, true);
+    let bits = 0;
+    for (let i = 0; i < 16; i++) {
+      const p = px[i]; let best = 0, bd = Infinity;
+      for (let j = 0; j < 4; j++) {
+        const c = colors[j];
+        const d = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
+        if (d < bd) { bd = d; best = j; }
+      }
+      bits |= best << (2*i);
+    }
+    out[o++] = bits & 0xff; out[o++] = (bits>>8)&0xff;
+    out[o++] = (bits>>16)&0xff; out[o++] = (bits>>24)&0xff;
+  }
+  return out;
+}
+function encodeDDS(imageData, w, h, kind) {
+  if (kind === "dds-rgba") {
+    const hd = buildDDSHeader(w, h, { cc: null });
+    const body = new Uint8Array(w*h*4);
+    for (let i = 0, o = 0; i < imageData.length; i += 4, o += 4) {
+      body[o] = imageData[i+2]; body[o+1] = imageData[i+1];
+      body[o+2] = imageData[i]; body[o+3] = imageData[i+3];
+    }
+    const f = new Uint8Array(hd.length + body.length);
+    f.set(hd, 0); f.set(body, hd.length);
+    return f;
+  }
+  if (kind === "dds-dxt1") {
+    const hd = buildDDSHeader(w, h, { cc: "DXT1" });
+    const body = encodeDXT1(imageData, w, h);
+    const f = new Uint8Array(hd.length + body.length);
+    f.set(hd, 0); f.set(body, hd.length);
+    return f;
+  }
+  if (kind === "dds-dxt5") {
+    const hd = buildDDSHeader(w, h, { cc: "DXT5" });
+    const body = encodeDXT5(imageData, w, h);
+    const f = new Uint8Array(hd.length + body.length);
+    f.set(hd, 0); f.set(body, hd.length);
+    return f;
+  }
+  throw new Error("Formato DDS desconhecido.");
+}
+
+/* ===== ABA CONVERTER ===== */
+(() => {
+  const $ = id => document.getElementById(id);
+  const dropzone = $("dropzone"), fileInput = $("fileInput");
+  const fileInfo = $("fileInfo"), ddsInfo = $("ddsInfo");
+  const canvas = $("preview"), ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const videoEl = $("videoEl");
+  const formatSel = $("format"), qualityRow = $("qualityRow");
+  const quality = $("quality"), qualityVal = $("qualityVal");
+  const convertBtn = $("convertBtn"), status = $("status"), downloadArea = $("downloadArea");
+  const frameRow = $("frameRow"), frameTime = $("frameTime");
+  const frameVal = $("frameVal"), frameDur = $("frameDur");
+
+  let loadedImageData = null, loadedName = "", loadedWidth = 0, loadedHeight = 0;
+  let videoURL = null, videoDuration = 0;
+
+  const setStatus = (m, k = "") => { status.textContent = m; status.className = k; };
+  const isVideoFile = f => (f.type && f.type.startsWith("video/")) ||
+    /\.(webm|mp4|m4v|ogv|ogg|mov)$/i.test(f.name);
+  const formatTime = s => s.toFixed(2) + " s";
+
+  function cleanupVideo() {
+    if (videoURL) { URL.revokeObjectURL(videoURL); videoURL = null; }
+    videoEl.removeAttribute("src"); videoEl.load();
+    videoDuration = 0; frameRow.classList.add("hidden");
+  }
+  function seekVideo(time) {
+    return new Promise((res, rej) => {
+      const onS = () => { videoEl.removeEventListener("seeked", onS);
+        videoEl.removeEventListener("error", onE); res(); };
+      const onE = () => { videoEl.removeEventListener("seeked", onS);
+        videoEl.removeEventListener("error", onE); rej(new Error("Falha ao buscar frame.")); };
+      videoEl.addEventListener("seeked", onS, { once: true });
+      videoEl.addEventListener("error", onE, { once: true });
+      if (Math.abs(videoEl.currentTime - time) < 0.001) {
+        videoEl.currentTime = Math.min(time + 0.001, videoDuration - 0.001);
+      } else videoEl.currentTime = time;
+    });
+  }
+  async function drawCurrentVideoFrame() {
+    if (videoEl.readyState < 2) {
+      await new Promise((res, rej) => {
+        const onL = () => { videoEl.removeEventListener("loadeddata", onL);
+          videoEl.removeEventListener("error", onE); res(); };
+        const onE = () => { videoEl.removeEventListener("loadeddata", onL);
+          videoEl.removeEventListener("error", onE); rej(new Error("Vídeo não carregou.")); };
+        videoEl.addEventListener("loadeddata", onL, { once: true });
+        videoEl.addEventListener("error", onE, { once: true });
+      });
+    }
+    const w = videoEl.videoWidth, h = videoEl.videoHeight;
+    if (!w || !h) throw new Error("Vídeo sem dimensões.");
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(videoEl, 0, 0, w, h);
+    loadedImageData = ctx.getImageData(0, 0, w, h);
+    loadedWidth = w; loadedHeight = h;
+  }
+  async function loadVideo(file) {
+    cleanupVideo();
+    videoURL = URL.createObjectURL(file);
+    videoEl.src = videoURL; videoEl.load();
+    await new Promise((res, rej) => {
+      const onM = () => { videoEl.removeEventListener("loadedmetadata", onM);
+        videoEl.removeEventListener("error", onE); res(); };
+      const onE = () => { videoEl.removeEventListener("loadedmetadata", onM);
+        videoEl.removeEventListener("error", onE); rej(new Error("Codec não suportado.")); };
+      videoEl.addEventListener("loadedmetadata", onM, { once: true });
+      videoEl.addEventListener("error", onE, { once: true });
+    });
+    videoDuration = videoEl.duration;
+    if (!isFinite(videoDuration) || videoDuration <= 0) videoDuration = 3600;
+    frameRow.classList.remove("hidden");
+    frameTime.min = 0; frameTime.max = videoDuration; frameTime.step = 0.01;
+    frameTime.value = 0; frameVal.textContent = "0.00";
+    frameDur.textContent = isFinite(videoEl.duration) ? formatTime(videoEl.duration) : "—";
+    await seekVideo(0); await drawCurrentVideoFrame();
+    fileInfo.innerHTML = "<b>" + file.name + "</b><br>Vídeo — " +
+      loadedWidth + " × " + loadedHeight + " px — " +
+      (file.size / 1024 / 1024).toFixed(2) + " MB" +
+      (isFinite(videoEl.duration) ? " — " + formatTime(videoEl.duration) : "");
+    ddsInfo.textContent = "Use o slider acima para escolher o frame.";
+    convertBtn.disabled = false;
+    setStatus("Vídeo carregado.", "ok");
+  }
+  async function loadFile(file) {
+    setStatus(""); downloadArea.innerHTML = ""; convertBtn.disabled = true; loadedImageData = null;
+    try {
+      if (isVideoFile(file)) { await loadVideo(file); return; }
+      cleanupVideo();
+      const buffer = await readFileAsArrayBuffer(file);
+      let result;
+      if (isDDS(buffer)) {
+        result = parseDDS(buffer);
+        ddsInfo.textContent = "DDS — " + result.kind + " — " + result.width + "×" + result.height;
+      } else {
+        const blob = new Blob([buffer]);
+        const url = URL.createObjectURL(blob);
+        const img = await loadImageFromURL(url);
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const cx = c.getContext("2d"); cx.drawImage(img, 0, 0);
+        result = { width: c.width, height: c.height, imageData: cx.getImageData(0, 0, c.width, c.height) };
+        URL.revokeObjectURL(url); ddsInfo.textContent = "";
+      }
+      loadedImageData = result.imageData; loadedWidth = result.width;
+      loadedHeight = result.height; loadedName = file.name;
+      canvas.width = loadedWidth; canvas.height = loadedHeight;
+      ctx.putImageData(loadedImageData, 0, 0);
+      fileInfo.innerHTML = "<b>" + file.name + "</b><br>" +
+        loadedWidth + " × " + loadedHeight + " px — " + (file.size / 1024).toFixed(1) + " KB";
+      convertBtn.disabled = false;
+      setStatus("Arquivo carregado.", "ok");
+    } catch (e) {
+      console.error(e); loadedImageData = null; convertBtn.disabled = true;
+      setStatus("Erro: " + e.message, "err");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+  function makeDownloadLink(blob, outName, areaEl) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = outName;
+    a.textContent = "⬇ Baixar " + outName + " (" + (blob.size / 1024).toFixed(1) + " KB)";
+    Object.assign(a.style, {
+      display: "block", padding: "12px 16px",
+      background: "linear-gradient(90deg,#5b8cff,#7c5cff)",
+      color: "#fff", textDecoration: "none", borderRadius: "10px",
+      fontWeight: "600", textAlign: "center", cursor: "pointer"
+    });
+    areaEl.innerHTML = ""; areaEl.appendChild(a);
+    try { a.click(); } catch (e) {}
+    window.addEventListener("beforeunload", () => URL.revokeObjectURL(url), { once: true });
+  }
+  async function convertAndDownload() {
+    if (!loadedImageData) return;
+    const fmt = formatSel.value, q = parseInt(quality.value, 10) / 100;
+    setStatus("Convertendo..."); downloadArea.innerHTML = "";
+    try {
+      let blob, ext;
+      if (fmt === "png" || fmt === "jpeg" || fmt === "webp") {
+        const mime = fmt === "jpeg" ? "image/jpeg" : ("image/" + fmt);
+        blob = await new Promise(res => canvas.toBlob(res, mime, q));
+        if (!blob) throw new Error("Navegador não suporta " + fmt.toUpperCase() + ".");
+        ext = fmt === "jpeg" ? "jpg" : fmt;
+      } else {
+        const bytes = encodeDDS(loadedImageData.data, loadedWidth, loadedHeight, fmt);
+        blob = new Blob([bytes], { type: "application/octet-stream" }); ext = "dds";
+      }
+      const base = (loadedName || "imagem").replace(/\.[^.]+$/, "") || "imagem";
+      makeDownloadLink(blob, base + "." + ext, downloadArea);
+      setStatus("Pronto! Se o download não iniciou sozinho, clique no botão abaixo.", "ok");
+    } catch (e) { console.error(e); setStatus("Erro: " + e.message, "err"); }
+  }
+  dropzone.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", e => {
+    if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+  });
+  ["dragenter","dragover"].forEach(ev => dropzone.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation(); dropzone.classList.add("drag");
+  }));
+  ["dragleave","drop"].forEach(ev => dropzone.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation(); dropzone.classList.remove("drag");
+  }));
+  dropzone.addEventListener("drop", e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) loadFile(f);
+  });
+  let seekToken = 0;
+  frameTime.addEventListener("input", async () => {
+    if (!videoURL) return;
+    const t = parseFloat(frameTime.value); frameVal.textContent = t.toFixed(2);
+    const my = ++seekToken;
+    try { await seekVideo(t); if (my !== seekToken) return; await drawCurrentVideoFrame(); }
+    catch (e) { console.warn(e); }
+  });
+  quality.addEventListener("input", () => { qualityVal.textContent = quality.value; });
+  function updQ() {
+    const v = formatSel.value;
+    qualityRow.classList.toggle("hidden", v === "png" || v.startsWith("dds"));
+  }
+  formatSel.addEventListener("change", updQ); updQ();
+  convertBtn.addEventListener("click", convertAndDownload);
+  window.addEventListener("beforeunload", cleanupVideo);
+
+  window.__studio = window.__studio || {};
+  window.__studio.getCurrentCanvas = () => {
+    if (!loadedImageData) return null;
+    return { imageData: loadedImageData, width: loadedWidth, height: loadedHeight };
+  };
+})();
+
+/* ===== ABA VÍDEO ===== */
+(() => {
+  const $ = id => document.getElementById(id);
+  const clipsListEl = $("clipsList"), clipsCountEl = $("clipsCount");
+  const addImgsBtn = $("addImgsBtn"), addFrameBtn = $("addFrameBtn");
+  const videoFileInput = $("videoFileInput");
+  const importVideoBtn = $("importVideoBtn"), importVideoInput = $("importVideoInput");
+
+  const vTransition = $("vTransition"), vTransitionDur = $("vTransitionDur");
+  const vDefaultEffect = $("vDefaultEffect");
+  const vFps = $("vFps"), vRes = $("vRes"), vBg = $("vBg");
+  const vFade = $("vFade"), vFit = $("vFit"), vBitrate = $("vBitrate");
+
+  const previewBtn = $("previewBtn"), exportBtn = $("exportBtn");
+  const vStatus = $("vStatus"), vDownloadArea = $("vDownloadArea");
+  const progressWrap = $("progressWrap"), progressBar = $("progressBar");
+  const totalDur = $("totalDur");
+  const vPreview = $("vPreview"), vPreviewCtx = vPreview.getContext("2d");
+
+  const importModal = $("importModal");
+  const importVideoEl = $("importVideoEl");
+  const importStart = $("importStart"), importEnd = $("importEnd");
+  const importFps = $("importFps"), importInfo = $("importInfo");
+  const importConfirmBtn = $("importConfirmBtn");
+  const importCancelBtn = $("importCancelBtn"), importCloseBtn = $("importCloseBtn");
+  const importProgressWrap = $("importProgressWrap"), importProgressBar = $("importProgressBar");
+
+  let clips = []; let nextId = 1; let previewing = false;
+  let importURL = null; let importDuration = 0; let importBusy = false;
+
+  const EFFECTS = [
+    { value: "none",      label: "⚪ Nenhum" },
+    { value: "zoom-in",   label: "🔍 Zoom in" },
+    { value: "zoom-out",  label: "🔎 Zoom out" },
+    { value: "pan-left",  label: "⬅️ Pan ←" },
+    { value: "pan-right", label: "➡️ Pan →" },
+    { value: "pan-up",    label: "⬆️ Pan ↑" },
+    { value: "pan-down",  label: "⬇️ Pan ↓" },
+    { value: "shake",     label: "📳 Shake" },
+    { value: "pulse",     label: "💓 Pulse" },
+    { value: "rotate",    label: "🔄 Rotação" },
+    { value: "blur-in",   label: "💨 Blur in" },
+    { value: "blur-out",  label: "🌫️ Blur out" },
+  ];
+
+  const setVStatus = (m, k = "") => { vStatus.textContent = m; vStatus.className = k; };
+
+  function updateCounters() {
+    clipsCountEl.textContent = clips.length;
+    const total = clips.reduce((s, c) => s + c.duration, 0);
+    totalDur.textContent = total.toFixed(2) + " s";
+  }
+  async function fileToCanvas(file) {
+    const buffer = await readFileAsArrayBuffer(file);
+    if (isDDS(buffer)) {
+      const r = parseDDS(buffer);
+      const c = document.createElement("canvas");
+      c.width = r.width; c.height = r.height;
+      c.getContext("2d").putImageData(r.imageData, 0, 0);
+      return c;
+    }
+    const blob = new Blob([buffer]); const url = URL.createObjectURL(blob);
+    try {
+      const img = await loadImageFromURL(url);
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0); return c;
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function addClipFromCanvas(canvas, name, duration = 2) {
+    clips.push({
+      id: "c" + (nextId++),
+      name,
+      canvas,
+      duration,
+      effect: vDefaultEffect.value || "none"
+    });
+    renderClips();
+  }
+  async function addClipsFromFiles(files) {
+    for (const f of files) {
+      try { addClipFromCanvas(await fileToCanvas(f), f.name, 2); }
+      catch (e) { setVStatus("Falha em " + f.name + ": " + e.message, "err"); }
+    }
+    setVStatus(files.length + " clipe(s) adicionado(s).", "ok");
+  }
+
+  function renderClips() {
+    updateCounters();
+    clipsListEl.innerHTML = "";
+    if (clips.length === 0) {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "Nenhum clipe. Adicione imagens ou importe um vídeo.";
+      clipsListEl.appendChild(p); return;
+    }
+    clips.forEach((clip, idx) => {
+      const row = document.createElement("div");
+      row.className = "clip";
+
+      const thumb = document.createElement("canvas");
+      thumb.className = "clip-thumb";
+      const maxW = 156, maxH = 112;
+      const sc = Math.min(maxW / clip.canvas.width, maxH / clip.canvas.height, 1);
+      thumb.width = Math.max(1, Math.floor(clip.canvas.width * sc));
+      thumb.height = Math.max(1, Math.floor(clip.canvas.height * sc));
+      thumb.style.width = "78px"; thumb.style.height = "56px";
+      thumb.getContext("2d").drawImage(clip.canvas, 0, 0, thumb.width, thumb.height);
+
+      const info = document.createElement("div");
+      info.className = "clip-info";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "clip-name"; nameEl.title = clip.name;
+      nameEl.textContent = (idx + 1) + ". " + clip.name;
+      info.appendChild(nameEl);
+
+      const controls = document.createElement("div");
+      controls.className = "clip-controls";
+
+      const durLabel = document.createElement("span");
+      durLabel.textContent = "⏱";
+      const durIn = document.createElement("input");
+      durIn.type = "number"; durIn.min = "0.05"; durIn.step = "0.1"; durIn.value = clip.duration;
+      const durUnit = document.createElement("span");
+      durUnit.textContent = "s";
+      durIn.addEventListener("input", () => {
+        const v = parseFloat(durIn.value);
+        if (!isNaN(v) && v > 0) { clip.duration = v; updateCounters(); }
+      });
+
+      const fxLabel = document.createElement("span");
+      fxLabel.textContent = "✨";
+      const fxSel = document.createElement("select");
+      fxSel.className = "effect-sel";
+      EFFECTS.forEach(opt => {
+        const o = document.createElement("option");
+        o.value = opt.value; o.textContent = opt.label;
+        if (clip.effect === opt.value) o.selected = true;
+        fxSel.appendChild(o);
+      });
+      fxSel.addEventListener("change", () => { clip.effect = fxSel.value; });
+
+      controls.append(durLabel, durIn, durUnit, fxLabel, fxSel);
+      info.appendChild(controls);
+
+      const btns = document.createElement("div");
+      btns.className = "clip-btns";
+      const up = document.createElement("button"); up.textContent = "↑"; up.title = "Mover para cima";
+      up.disabled = idx === 0;
+      up.addEventListener("click", () => {
+        [clips[idx-1], clips[idx]] = [clips[idx], clips[idx-1]]; renderClips();
+      });
+      const dn = document.createElement("button"); dn.textContent = "↓"; dn.title = "Mover para baixo";
+      dn.disabled = idx === clips.length - 1;
+      dn.addEventListener("click", () => {
+        [clips[idx+1], clips[idx]] = [clips[idx], clips[idx+1]]; renderClips();
+      });
+      const del = document.createElement("button"); del.className = "del";
+      del.textContent = "✕"; del.title = "Remover";
+      del.addEventListener("click", () => { clips.splice(idx, 1); renderClips(); });
+      btns.append(up, dn, del);
+
+      row.append(thumb, info, btns);
+      clipsListEl.appendChild(row);
+    });
+  }
+
+  function getResolution() {
+    const v = vRes.value;
+    if (v === "auto") {
+      if (clips.length === 0) return { w: 1280, h: 720 };
+      const c = clips[0].canvas;
+      return { w: c.width - (c.width % 2), h: c.height - (c.height % 2) };
+    }
+    const [w, h] = v.split("x").map(n => parseInt(n, 10));
+    return { w, h };
+  }
+
+  function applyEffectTransform(ctx, effect, p, W, H) {
+    let scale = 1, tx = 0, ty = 0, rot = 0, blur = 0;
+    switch (effect) {
+      case "zoom-in":   scale = 1 + 0.18 * p; break;
+      case "zoom-out":  scale = 1.18 - 0.18 * p; break;
+      case "pan-left":  scale = 1.18; tx = -W * 0.09 * (1 - 2 * p); break;
+      case "pan-right": scale = 1.18; tx =  W * 0.09 * (1 - 2 * p); break;
+      case "pan-up":    scale = 1.18; ty = -H * 0.09 * (1 - 2 * p); break;
+      case "pan-down":  scale = 1.18; ty =  H * 0.09 * (1 - 2 * p); break;
+      case "shake":     tx = Math.sin(p * Math.PI * 24) * 8;
+                        ty = Math.cos(p * Math.PI * 19) * 6; break;
+      case "pulse":     scale = 1 + 0.04 * Math.sin(p * Math.PI * 6); break;
+      case "rotate":    rot = 0.06 * Math.sin(p * Math.PI * 2); break;
+      case "blur-in":   blur = 12 * (1 - p); break;
+      case "blur-out":  blur = 12 * p; break;
+    }
+    ctx.translate(W/2 + tx, H/2 + ty);
+    ctx.scale(scale, scale);
+    ctx.rotate(rot);
+    ctx.translate(-W/2, -H/2);
+    if (blur > 0.05 && "filter" in ctx) {
+      ctx.filter = "blur(" + blur.toFixed(1) + "px)";
+    }
+  }
+
+  function drawClipFit(ctx, canvasEl, W, H, fit) {
+    const sw = canvasEl.width, sh = canvasEl.height;
+    if (!sw || !sh) return;
+    if (fit === "contain") {
+      const s = Math.min(W / sw, H / sh);
+      const dw = sw * s, dh = sh * s;
+      ctx.drawImage(canvasEl, (W-dw)/2, (H-dh)/2, dw, dh);
+    } else {
+      const s = Math.max(W / sw, H / sh);
+      const dw = sw * s, dh = sh * s;
+      ctx.drawImage(canvasEl, (W-dw)/2, (H-dh)/2, dw, dh);
+    }
+  }
+
+  function renderClipOnly(ctx, clip, localT, W, H, fit, effect) {
+    ctx.save();
+    const dur = clip.duration || 1;
+    const p = Math.max(0, Math.min(1, localT / dur));
+    applyEffectTransform(ctx, effect, p, W, H);
+    drawClipFit(ctx, clip.canvas, W, H, fit);
+    ctx.restore();
+  }
+
+  function applyTransition(ctx, type, p, W, H, drawA, drawB) {
+    ctx.save();
+    if (type === "fade") {
+      ctx.globalAlpha = 1 - p; drawA(ctx);
+      ctx.globalAlpha = p; drawB(ctx);
+      ctx.globalAlpha = 1;
+      ctx.restore(); return;
+    }
+    if (type === "slide-left") {
+      const off = p * W;
+      ctx.save(); ctx.translate(-off, 0); drawA(ctx); ctx.restore();
+      ctx.save(); ctx.translate(W - off, 0); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "slide-right") {
+      const off = p * W;
+      ctx.save(); ctx.translate(off, 0); drawA(ctx); ctx.restore();
+      ctx.save(); ctx.translate(off - W, 0); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "slide-up") {
+      const off = p * H;
+      ctx.save(); ctx.translate(0, -off); drawA(ctx); ctx.restore();
+      ctx.save(); ctx.translate(0, H - off); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "slide-down") {
+      const off = p * H;
+      ctx.save(); ctx.translate(0, off); drawA(ctx); ctx.restore();
+      ctx.save(); ctx.translate(0, off - H); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "zoom-in") {
+      drawA(ctx);
+      ctx.save();
+      ctx.globalAlpha = p;
+      const s = 0.3 + 0.7 * p;
+      ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+      drawB(ctx);
+      ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "zoom-out") {
+      drawB(ctx);
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      const s = 1 + 0.7 * p;
+      ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+      drawA(ctx);
+      ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "wipe-left") {
+      drawA(ctx);
+      ctx.save(); ctx.beginPath();
+      ctx.rect(W * (1 - p), 0, W * p, H); ctx.clip(); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "wipe-right") {
+      drawA(ctx);
+      ctx.save(); ctx.beginPath();
+      ctx.rect(0, 0, W * p, H); ctx.clip(); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "wipe-up") {
+      drawA(ctx);
+      ctx.save(); ctx.beginPath();
+      ctx.rect(0, H * (1 - p), W, H * p); ctx.clip(); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "wipe-down") {
+      drawA(ctx);
+      ctx.save(); ctx.beginPath();
+      ctx.rect(0, 0, W, H * p); ctx.clip(); drawB(ctx); ctx.restore();
+      ctx.restore(); return;
+    }
+    if (type === "circle") {
+      drawA(ctx);
+      ctx.save(); ctx.beginPath();
+      const maxR = Math.sqrt(W*W + H*H) / 2;
+      ctx.arc(W/2, H/2, maxR * p, 0, Math.PI * 2); ctx.clip();
+      drawB(ctx);
+      ctx.restore();
+      ctx.restore(); return;
+    }
+    ctx.globalAlpha = 1 - p; drawA(ctx);
+    ctx.globalAlpha = p; drawB(ctx);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  function findClipAtTime(t) {
+    let acc = 0;
+    for (let i = 0; i < clips.length; i++) {
+      const c = clips[i];
+      if (t < acc + c.duration) return { clip: c, index: i, localT: t - acc };
+      acc += c.duration;
+    }
+    return null;
+  }
+
+  function renderFrameAt(t, ctx, W, H, bg, fit, opts) {
+    const { transition, transitionDur, fade } = opts;
+    ctx.save();
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    const found = findClipAtTime(t);
+    if (!found) { ctx.restore(); return; }
+    const { clip, index, localT } = found;
+    const effect = clip.effect || "none";
+    const dur = clip.duration;
+    const hasNext = index < clips.length - 1;
+    const timeUntilEnd = dur - localT;
+    const useTransition = hasNext && transition !== "none" &&
+                          transitionDur > 0 && timeUntilEnd < transitionDur &&
+                          dur > transitionDur + 0.05;
+
+    const drawA = (c) => renderClipOnly(c, clip, localT, W, H, fit, effect);
+
+    if (!useTransition) {
+      drawA(ctx);
+    } else {
+      const p = Math.max(0, Math.min(1, 1 - timeUntilEnd / transitionDur));
+      const next = clips[index + 1];
+      const nextEffect = next.effect || "none";
+      const nextLocalT = p * transitionDur;
+      const drawB = (c) => renderClipOnly(c, next, nextLocalT, W, H, fit, nextEffect);
+      applyTransition(ctx, transition, p, W, H, drawA, drawB);
+    }
+
+    if (fade && dur > 0) {
+      const fd = Math.min(0.5, dur / 3);
+      let a = 0;
+      if (localT < fd) a = 1 - localT / fd;
+      else if (localT > dur - fd) a = (localT - (dur - fd)) / fd;
+      if (a > 0) {
+        ctx.fillStyle = "rgba(0,0,0," + Math.min(1, a).toFixed(3) + ")";
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+    ctx.restore();
+  }
+
+  function readRenderOpts() {
+    return {
+      transition: vTransition.value,
+      transitionDur: Math.max(0, parseFloat(vTransitionDur.value) || 0),
+      fade: vFade.checked
+    };
+  }
+
+  async function preview() {
+    if (previewing) return;
+    if (clips.length === 0) { setVStatus("Adicione clipes antes de pré-visualizar.", "warn"); return; }
+    previewing = true; previewBtn.disabled = true; exportBtn.disabled = true;
+    setVStatus("Pré-visualizando...");
+
+    const { w: W, h: H } = getResolution();
+    vPreview.width = W; vPreview.height = H;
+    const total = clips.reduce((s, c) => s + c.duration, 0);
+    const bg = vBg.value;
+    const fit = vFit.checked ? "contain" : "cover";
+    const opts = readRenderOpts();
+
+    const start = performance.now();
+    await new Promise(resolve => {
+      function tick() {
+        const t = (performance.now() - start) / 1000;
+        if (t >= total) {
+          renderFrameAt(total - 0.001, vPreviewCtx, W, H, bg, fit, opts);
+          resolve(); return;
+        }
+        renderFrameAt(t, vPreviewCtx, W, H, bg, fit, opts);
+        requestAnimationFrame(tick);
+      }
+      tick();
+    });
+
+    previewing = false; previewBtn.disabled = false; exportBtn.disabled = false;
+    setVStatus("Pré-visualização concluída.", "ok");
+  }
+
+  function pickWebMMime() {
+    const c = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    for (const m of c) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+    return null;
+  }
+
+  async function exportWebM() {
+    if (clips.length === 0) { setVStatus("Adicione clipes antes de exportar.", "warn"); return; }
+    if (!window.MediaRecorder) { setVStatus("Navegador não suporta MediaRecorder.", "err"); return; }
+    const mime = pickWebMMime();
+    if (!mime) { setVStatus("Nenhum codec WebM suportado.", "err"); return; }
+
+    previewBtn.disabled = true; exportBtn.disabled = true;
+    vDownloadArea.innerHTML = "";
+    setVStatus("Exportando (" + mime + ")...");
+
+    const { w: W, h: H } = getResolution();
+    const fps = parseInt(vFps.value, 10);
+    const bg = vBg.value;
+    const fit = vFit.checked ? "contain" : "cover";
+    const opts = readRenderOpts();
+    const bitrate = parseInt(vBitrate.value, 10);
+
+    const expCanvas = document.createElement("canvas");
+    expCanvas.width = W; expCanvas.height = H;
+    const expCtx = expCanvas.getContext("2d");
+    expCtx.fillStyle = bg; expCtx.fillRect(0, 0, W, H);
+
+    const stream = expCanvas.captureStream(fps);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate });
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(res => { rec.onstop = res; });
+    rec.start();
+
+    progressWrap.classList.add("visible");
+    progressBar.style.width = "0%";
+    const total = clips.reduce((s, c) => s + c.duration, 0);
+    const totalMs = total * 1000;
+    const start = performance.now();
+
+    await new Promise(resolve => {
+      function tick() {
+        const el = performance.now() - start;
+        const t = el / 1000;
+        if (t >= total) {
+          renderFrameAt(total - 0.001, expCtx, W, H, bg, fit, opts);
+          progressBar.style.width = "100%";
+          setTimeout(resolve, 200); return;
+        }
+        renderFrameAt(t, expCtx, W, H, bg, fit, opts);
+        progressBar.style.width = Math.min(100, (el / totalMs) * 100).toFixed(1) + "%";
+        requestAnimationFrame(tick);
+      }
+      tick();
+    });
+
+    rec.stop(); await stopped;
+    const blob = new Blob(chunks, { type: "video/webm" });
+    const base = "video_" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const outName = base + ".webm";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = outName;
+    a.textContent = "⬇ Baixar " + outName + " (" + (blob.size / 1024 / 1024).toFixed(2) + " MB)";
+    Object.assign(a.style, {
+      display: "block", padding: "12px 16px",
+      background: "linear-gradient(90deg,#5b8cff,#7c5cff)",
+      color: "#fff", textDecoration: "none", borderRadius: "10px",
+      fontWeight: "600", textAlign: "center", cursor: "pointer"
+    });
+    vDownloadArea.appendChild(a);
+    try { a.click(); } catch (e) {}
+    window.addEventListener("beforeunload", () => URL.revokeObjectURL(url), { once: true });
+
+    progressWrap.classList.remove("visible");
+    previewBtn.disabled = false; exportBtn.disabled = false;
+    setVStatus("Exportado! Se o download não iniciar sozinho, clique no botão abaixo.", "ok");
+  }
+
+  function updateImportInfo() {
+    if (!importDuration) return;
+    const s = Math.max(0, parseFloat(importStart.value) || 0);
+    const e = Math.min(importDuration, parseFloat(importEnd.value) || importDuration);
+    const seg = Math.max(0, e - s);
+    const fps = parseInt(importFps.value, 10) || 1;
+    const count = Math.max(1, Math.round(seg * fps));
+    importInfo.textContent = "📏 Trecho: " + seg.toFixed(2) + " s → " +
+      count + " clipe(s), cada um com " + (1/fps).toFixed(3) + " s.";
+  }
+  function closeImportModal() {
+    importModal.classList.remove("open");
+    if (importURL) { URL.revokeObjectURL(importURL); importURL = null; }
+    importVideoEl.removeAttribute("src"); importVideoEl.load();
+    importDuration = 0; importBusy = false;
+    importProgressWrap.classList.remove("visible");
+    importProgressBar.style.width = "0%";
+    importConfirmBtn.disabled = true;
+  }
+  async function openImportModal(file) {
+    closeImportModal();
+    importModal.classList.add("open");
+    importInfo.textContent = "Carregando vídeo…";
+    importURL = URL.createObjectURL(file);
+    importVideoEl.src = importURL;
+    importVideoEl.load();
+    try {
+      await new Promise((res, rej) => {
+        const onM = () => { importVideoEl.removeEventListener("loadedmetadata", onM);
+          importVideoEl.removeEventListener("error", onE); res(); };
+        const onE = () => { importVideoEl.removeEventListener("loadedmetadata", onM);
+          importVideoEl.removeEventListener("error", onE);
+          rej(new Error("Codec não suportado pelo navegador.")); };
+        importVideoEl.addEventListener("loadedmetadata", onM, { once: true });
+        importVideoEl.addEventListener("error", onE, { once: true });
+      });
+    } catch (e) {
+      importInfo.textContent = "❌ Erro: " + e.message;
+      return;
+    }
+    importDuration = isFinite(importVideoEl.duration) ? importVideoEl.duration : 0;
+    importStart.min = 0; importStart.max = importDuration; importStart.value = 0;
+    importEnd.min = 0; importEnd.max = importDuration; importEnd.value = importDuration.toFixed(2);
+    updateImportInfo();
+    importConfirmBtn.disabled = false;
+  }
+  async function extractFramesAndAddClips() {
+    if (importBusy || !importDuration) return;
+    const s = Math.max(0, parseFloat(importStart.value) || 0);
+    const e = Math.min(importDuration, parseFloat(importEnd.value) || importDuration);
+    if (e <= s) { importInfo.textContent = "O fim deve ser maior que o início."; return; }
+    const fps = parseInt(importFps.value, 10) || 1;
+    const step = 1 / fps;
+    const frameCount = Math.max(1, Math.round((e - s) * fps));
+
+    importBusy = true;
+    importConfirmBtn.disabled = true;
+    importCancelBtn.disabled = true;
+    importProgressWrap.classList.add("visible");
+    importProgressBar.style.width = "0%";
+    importInfo.textContent = "✨ Extraindo " + frameCount + " frame(s)…";
+
+    const W = importVideoEl.videoWidth, H = importVideoEl.videoHeight;
+    const tmp = document.createElement("canvas");
+    tmp.width = W; tmp.height = H;
+    const tctx = tmp.getContext("2d");
+    const baseName = (importVideoEl.src.split("/").pop() || "video").replace(/\.[^.]+$/, "");
+
+    for (let i = 0; i < frameCount; i++) {
+      const t = s + i * step;
+      if (t >= e) break;
+      try {
+        await seekVideoTo(importVideoEl, Math.min(t, importDuration - 0.001));
+        tctx.drawImage(importVideoEl, 0, 0, W, H);
+        const c = document.createElement("canvas");
+        c.width = W; c.height = H;
+        c.getContext("2d").drawImage(tmp, 0, 0);
+        addClipFromCanvas(c, baseName + "_f" + String(i + 1).padStart(3, "0"), step);
+      } catch (err) { console.warn("Frame " + i + " falhou:", err); }
+      importProgressBar.style.width = ((i + 1) / frameCount * 100).toFixed(1) + "%";
+    }
+
+    importBusy = false;
+    importConfirmBtn.disabled = false;
+    importCancelBtn.disabled = false;
+    setVStatus("🎬 Vídeo importado: " + frameCount + " frame(s).", "ok");
+    setTimeout(closeImportModal, 400);
+  }
+
+  addImgsBtn.addEventListener("click", () => videoFileInput.click());
+  videoFileInput.addEventListener("change", e => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) addClipsFromFiles(files);
+    e.target.value = "";
+  });
+  addFrameBtn.addEventListener("click", () => {
+    const info = window.__studio && window.__studio.getCurrentCanvas
+      ? window.__studio.getCurrentCanvas() : null;
+    if (!info) {
+      setVStatus("Nenhum frame disponível. Carregue uma imagem na aba Converter primeiro.", "warn");
+      return;
+    }
+    const c = document.createElement("canvas");
+    c.width = info.width; c.height = info.height;
+    c.getContext("2d").putImageData(info.imageData, 0, 0);
+    addClipFromCanvas(c, "frame_" + new Date().toISOString().slice(11, 19).replace(/:/g, "-"), 2);
+    setVStatus("📸 Frame adicionado.", "ok");
+  });
+
+  importVideoBtn.addEventListener("click", () => importVideoInput.click());
+  importVideoInput.addEventListener("change", e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) openImportModal(f);
+    e.target.value = "";
+  });
+  importStart.addEventListener("input", updateImportInfo);
+  importEnd.addEventListener("input", updateImportInfo);
+  importFps.addEventListener("change", updateImportInfo);
+  importConfirmBtn.addEventListener("click", extractFramesAndAddClips);
+  importCancelBtn.addEventListener("click", closeImportModal);
+  importCloseBtn.addEventListener("click", closeImportModal);
+  importModal.addEventListener("click", e => { if (e.target === importModal) closeImportModal(); });
+
+  ["dragenter","dragover"].forEach(ev => clipsListEl.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    clipsListEl.style.borderColor = "var(--accent)";
+  }));
+  ["dragleave","drop"].forEach(ev => clipsListEl.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    clipsListEl.style.borderColor = "";
+  }));
+  clipsListEl.addEventListener("drop", e => {
+    const files = Array.from(e.dataTransfer.files || []);
+    if (!files.length) return;
+    const first = files[0];
+    const isVid = (first.type && first.type.startsWith("video/")) ||
+      /\.(webm|mp4|m4v|ogv|mov)$/i.test(first.name);
+    if (isVid) openImportModal(first);
+    else addClipsFromFiles(files);
+  });
+
+  previewBtn.addEventListener("click", preview);
+  exportBtn.addEventListener("click", exportWebM);
+
+  renderClips();
+})();
+
+/* ===== ABA SQLITE ===== */
+let db = null;
+let currentTable = null;
+let currentData = [];
+let currentRowIds = [];
+let currentColumns = [];
+let originalFileName = 'main.db';
+let hasRowId = true;
+let columnCounter = 0;
+
+let SQL = null;
+initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` })
+  .then(sql => { SQL = sql; })
+  .catch(err => showToast('Erro ao carregar SQL.js: ' + err.message, 'error'));
+
+document.getElementById('btnOpen').addEventListener('click', () =>
+  document.getElementById('dbFileInput').click());
+document.getElementById('dbFileInput').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (f) loadFileFromBlob(f);
+  e.target.value = '';
+});
+document.getElementById('dbDropZone').addEventListener('click', () =>
+  document.getElementById('dbFileInput').click());
+
+document.addEventListener('dragover', e => {
+  const tab = document.getElementById('tab-sqlite');
+  if (tab && tab.classList.contains('active')) e.preventDefault();
+});
+document.addEventListener('drop', e => {
+  const tab = document.getElementById('tab-sqlite');
+  if (!tab || !tab.classList.contains('active')) return;
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) loadFileFromBlob(file);
+});
+
+const dbDropZone = document.getElementById('dbDropZone');
+['dragenter','dragover'].forEach(ev => dbDropZone.addEventListener(ev, e => {
+  if (document.getElementById('tab-sqlite').classList.contains('active')) {
+    e.preventDefault(); dbDropZone.classList.add('dragover');
+  }
+}));
+['dragleave','drop'].forEach(ev => dbDropZone.addEventListener(ev, () => {
+  dbDropZone.classList.remove('dragover');
+}));
+
+function loadFileFromBlob(file) {
+  if (!SQL) { showToast('SQL.js ainda carregando…', 'error'); return; }
+  originalFileName = file.name;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const Uints = new Uint8Array(e.target.result);
+      db = new SQL.Database(Uints);
+      showToast('Banco carregado com sucesso!', 'success');
+      document.getElementById('btnSave').disabled = false;
+      document.getElementById('btnNewTable').disabled = false;
+      refreshTableList();
+      showMainView();
+    } catch (err) {
+      showToast('Erro ao abrir banco: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showMainView() {
+  document.getElementById('dbMain').innerHTML = `
+    <div class="db-toolbar-inline">
+      <button id="btnAddRow" disabled
+              style="background:var(--panel-2);color:var(--text);border:1px solid var(--border);
+                     padding:10px 16px;border-radius:10px;cursor:pointer;
+                     font-size:0.9rem;font-weight:600;font-family:inherit;">
+        ➕ Nova Linha
+      </button>
+      <input type="text" class="search-box" id="searchBox"
+             placeholder="🔍 Buscar..." oninput="filterTable()">
+      <span class="info" id="tableInfo"></span>
+    </div>
+    <div class="verify-panel" id="verifyPanel">
+      <h4>✅ Verificação de Alterações</h4>
+      <pre id="verifyContent"></pre>
+    </div>
+    <div class="schema-info" id="schemaInfo"></div>
+    <div class="table-wrapper" id="tableWrapper"></div>
+  `;
+  document.getElementById('btnAddRow').addEventListener('click', addRow);
+  if (currentTable) document.getElementById('btnAddRow').disabled = false;
+}
+
+function refreshTableList() {
+  if (!db) return;
+  const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+  const list = document.getElementById('tableList');
+  if (!tables.length || !tables[0].values.length) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;padding:10px 0;margin:0;">Nenhuma tabela encontrada</p>';
+    return;
+  }
+  list.innerHTML = '';
+  tables[0].values.forEach(row => {
+    const name = row[0];
+    const el = document.createElement('div');
+    el.className = 'table-item';
+    el.dataset.table = name;
+    el.textContent = name;
+    el.addEventListener('click', () => selectTable(name));
+    list.appendChild(el);
+  });
+}
+
+function selectTable(name) {
+  currentTable = name;
+  document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
+  const el = document.querySelector(`[data-table="${CSS.escape(name)}"]`);
+  if (el) el.classList.add('active');
+  const btn = document.getElementById('btnAddRow');
+  if (btn) btn.disabled = false;
+  loadTableData(name);
+}
+
+function loadTableData(name) {
+  try {
+    const tblInfo = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name=${escapeValue(name)}`);
+    const createSql = tblInfo[0]?.values[0]?.[0] || '';
+    hasRowId = !createSql.toUpperCase().includes('WITHOUT ROWID');
+
+    const pragma = db.exec(`PRAGMA table_info(${escapeIdentifier(name)})`);
+    currentColumns = pragma[0].values.map(col => ({
+      cid: col[0], name: col[1], type: col[2],
+      notnull: col[3], dflt: col[4], pk: col[5]
+    }));
+
+    const rowidCol = hasRowId ? 'rowid, ' : '';
+    const result = db.exec(`SELECT ${rowidCol}* FROM ${escapeIdentifier(name)}`);
+
+    if (result.length && result[0].values.length) {
+      if (hasRowId) {
+        currentRowIds = result[0].values.map(row => row[0]);
+        currentData = result[0].values.map(row => row.slice(1));
+      } else {
+        currentRowIds = result[0].values.map(() => null);
+        currentData = result[0].values;
+      }
+    } else {
+      currentData = [];
+      currentRowIds = [];
+    }
+
+    renderTable();
+    updateSchemaInfo();
+  } catch (err) {
+    showToast('Erro ao carregar tabela: ' + err.message, 'error');
+  }
+}
+
+function renderTable() {
+  const wrapper = document.getElementById('tableWrapper');
+  if (!wrapper) return;
+  if (!currentColumns.length) {
+    wrapper.innerHTML = '<p style="padding:20px;color:var(--muted);">Tabela vazia</p>';
+    return;
+  }
+  const search = (document.getElementById('searchBox')?.value || '').toLowerCase();
+  let displayIndices = [];
+  if (search) {
+    currentData.forEach((row, idx) => {
+      if (row.some(cell => (cell !== null ? String(cell) : '').toLowerCase().includes(search))) {
+        displayIndices.push(idx);
+      }
+    });
+  } else {
+    displayIndices = currentData.map((_, i) => i);
+  }
+
+  const info = document.getElementById('tableInfo');
+  if (info) info.textContent =
+    `${currentData.length} linha(s) total | ${displayIndices.length} visível(is)`;
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const htr = document.createElement('tr');
+  currentColumns.forEach(col => {
+    const th = document.createElement('th');
+    const pk = col.pk ? ' 🔑' : '';
+    th.innerHTML = `${escapeHtml(col.name)}${pk}<br>
+      <span style="font-weight:400;color:var(--muted);font-size:0.72rem;">
+        ${escapeHtml(col.type || 'ANY')}
+      </span>`;
+    htr.appendChild(th);
+  });
+  const thA = document.createElement('th');
+  thA.style.width = '90px';
+  thA.textContent = 'Ações';
+  htr.appendChild(thA);
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  displayIndices.forEach(idx => {
+    const row = currentData[idx];
+    const tr = document.createElement('tr');
+    tr.dataset.idx = idx;
+    row.forEach((cell, colIdx) => {
+      const td = document.createElement('td');
+      td.className = 'editable';
+      if (cell === null) {
+        td.innerHTML = '<span class="null-value">NULL</span>';
+        td.title = '';
+      } else {
+        td.textContent = String(cell);
+        td.title = String(cell);
+      }
+      td.addEventListener('click', () => editCell(td, idx, colIdx));
+      tr.appendChild(td);
+    });
+    const tdA = document.createElement('td');
+    const actWrap = document.createElement('div');
+    actWrap.className = 'row-actions';
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '🗑️ Excluir';
+    delBtn.addEventListener('click', ev => deleteRow(idx, ev));
+    actWrap.appendChild(delBtn);
+    tdA.appendChild(actWrap);
+    tr.appendChild(tdA);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrapper.innerHTML = '';
+  wrapper.appendChild(table);
+}
+
+function updateSchemaInfo() {
+  const el = document.getElementById('schemaInfo');
+  if (!el) return;
+  const pkInfo = currentColumns.filter(c => c.pk).map(c => c.name).join(', ') || 'Nenhuma';
+  const rowidInfo = hasRowId ? 'Sim (implícito)' : 'Não (WITHOUT ROWID)';
+  el.innerHTML =
+    `<strong>Tabela:</strong> <span>${escapeHtml(currentTable)}</span> ` +
+    `<strong>PK:</strong> <span>${escapeHtml(pkInfo)}</span> ` +
+    `<strong>RowID:</strong> <span>${escapeHtml(rowidInfo)}</span> ` +
+    `<strong>Colunas:</strong> <span>${currentColumns.length}</span>`;
+}
+
+function editCell(td, rowIdx, colIdx) {
+  if (td.classList.contains('editing')) return;
+  const currentVal = currentData[rowIdx][colIdx];
+  const input = document.createElement('input');
+  input.value = currentVal !== null ? String(currentVal) : '';
+  input.type = 'text';
+
+  td.classList.add('editing');
+  td.innerHTML = '';
+  td.appendChild(input);
+  input.focus();
+  input.select();
+
+  function save() {
+    const val = input.value;
+    const col = currentColumns[colIdx];
+    let newVal = val;
+
+    if (val === '' && !col.notnull) {
+      newVal = null;
+    } else if (col.type && (col.type.toUpperCase().includes('INT') ||
+                            col.type.toUpperCase().includes('REAL') ||
+                            col.type.toUpperCase().includes('FLOAT') ||
+                            col.type.toUpperCase().includes('NUMERIC'))) {
+      newVal = val === '' ? (col.notnull ? 0 : null) : Number(val);
+      if (isNaN(newVal)) newVal = val;
+    }
+
+    const oldVal = currentData[rowIdx][colIdx];
+    currentData[rowIdx][colIdx] = newVal;
+
+    const where = buildWhere(rowIdx);
+    if (!where) {
+      showToast('Erro: não foi possível identificar a linha para atualizar', 'error');
+      currentData[rowIdx][colIdx] = oldVal;
+      cancel();
+      return;
+    }
+
+    const setClause = `${escapeIdentifier(col.name)} = ${escapeValue(newVal)}`;
+
+    try {
+      db.run(`UPDATE ${escapeIdentifier(currentTable)} SET ${setClause} WHERE ${where}`);
+      const verify = db.exec(`SELECT ${escapeIdentifier(col.name)} FROM ${escapeIdentifier(currentTable)} WHERE ${where}`);
+      const savedVal = verify[0]?.values[0]?.[0];
+
+      if (savedVal !== newVal && !(savedVal === null && newVal === null) &&
+          String(savedVal) !== String(newVal)) {
+        throw new Error('Valor salvo não corresponde ao esperado');
+      }
+      showToast('✅ Célula atualizada e verificada!', 'success');
+      showVerify(`UPDATE ${currentTable} SET ${col.name} = ${escapeValue(newVal)} WHERE ${where}
+
+Verificado: ${escapeValue(savedVal)} === ${escapeValue(newVal)}`);
+    } catch (err) {
+      showToast('❌ Erro ao salvar: ' + err.message, 'error');
+      currentData[rowIdx][colIdx] = oldVal;
+      cancel();
+      return;
+    }
+
+    td.classList.remove('editing');
+    if (newVal === null) {
+      td.innerHTML = '<span class="null-value">NULL</span>';
+      td.title = '';
+    } else {
+      td.textContent = String(newVal);
+      td.title = String(newVal);
+    }
+  }
+
+  function cancel() {
+    td.classList.remove('editing');
+    if (currentVal === null) {
+      td.innerHTML = '<span class="null-value">NULL</span>';
+      td.title = '';
+    } else {
+      td.textContent = String(currentVal);
+      td.title = String(currentVal);
+    }
+  }
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur();
+    if (e.key === 'Escape') cancel();
+  });
+}
+
+function buildWhere(rowIdx) {
+  if (hasRowId && currentRowIds[rowIdx] !== null && currentRowIds[rowIdx] !== undefined) {
+    return `rowid = ${currentRowIds[rowIdx]}`;
+  }
+  const pkCols = currentColumns.filter(c => c.pk);
+  if (pkCols.length) {
+    return pkCols.map(c => {
+      const i = currentColumns.indexOf(c);
+      return `${escapeIdentifier(c.name)} = ${escapeValue(currentData[rowIdx][i])}`;
+    }).join(' AND ');
+  }
+  const conditions = currentColumns.map((c, i) => {
+    const v = currentData[rowIdx][i];
+    if (v === null) return `${escapeIdentifier(c.name)} IS NULL`;
+    return `${escapeIdentifier(c.name)} = ${escapeValue(v)}`;
+  });
+  return conditions.join(' AND ');
+}
+
+function addRow() {
+  if (!currentTable) return;
+  const values = currentColumns.map(col => {
+    if (col.pk && col.type && col.type.toUpperCase().includes('INT')) return null;
+    return col.dflt !== null ? col.dflt : (col.notnull ? '' : null);
+  });
+  const cols = currentColumns.map(c => escapeIdentifier(c.name)).join(', ');
+  const vals = values.map(v => escapeValue(v)).join(', ');
+
+  try {
+    db.run(`INSERT INTO ${escapeIdentifier(currentTable)} (${cols}) VALUES (${vals})`);
+    let newRowId = null;
+    if (hasRowId) {
+      const last = db.exec('SELECT last_insert_rowid()');
+      newRowId = last[0]?.values[0]?.[0];
+    }
+    loadTableData(currentTable);
+    showToast('✅ Linha adicionada! RowID: ' + newRowId, 'success');
+  } catch (err) {
+    showToast('❌ Erro ao adicionar: ' + err.message, 'error');
+  }
+}
+
+function deleteRow(idx, event) {
+  event.stopPropagation();
+  if (!confirm('Tem certeza que deseja excluir esta linha?')) return;
+  const where = buildWhere(idx);
+  if (!where) { showToast('Erro: não foi possível identificar a linha', 'error'); return; }
+  try {
+    db.run(`DELETE FROM ${escapeIdentifier(currentTable)} WHERE ${where}`);
+    const verify = db.exec(`SELECT COUNT(*) FROM ${escapeIdentifier(currentTable)} WHERE ${where}`);
+    const count = verify[0]?.values[0]?.[0];
+    if (count !== 0) throw new Error('A linha ainda existe após DELETE');
+
+    currentData.splice(idx, 1);
+    currentRowIds.splice(idx, 1);
+    renderTable();
+    const info = document.getElementById('tableInfo');
+    if (info) info.textContent = `${currentData.length} linha(s)`;
+    showToast('✅ Linha excluída e verificada!', 'success');
+  } catch (err) {
+    showToast('❌ Erro ao excluir: ' + err.message, 'error');
+  }
+}
+
+function filterTable() { renderTable(); }
+
+function saveDatabase() {
+  if (!db) return;
+  try {
+    const data = db.export();
+    const blob = new Blob([data], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = originalFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('💾 Arquivo salvo! Verifique seus downloads.', 'success');
+  } catch (err) {
+    showToast('❌ Erro ao salvar: ' + err.message, 'error');
+  }
+}
+
 function showVerify(text) {
   const panel = document.getElementById('verifyPanel');
   const content = document.getElementById('verifyContent');
@@ -7,7 +2245,6 @@ function showVerify(text) {
   }
 }
 
-/* --- Nova Tabela --- */
 document.getElementById('btnNewTable').addEventListener('click', openNewTableModal);
 document.getElementById('btnSave').addEventListener('click', saveDatabase);
 document.getElementById('newTableCloseBtn').addEventListener('click', closeNewTableModal);
